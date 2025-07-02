@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <title>Сканер паспорта</title>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" th:href="@{/css/styles.css}">
+</head>
+<body>
+<div class="container">
+    <h1>Загрузка файла для сканирования</h1>
+
+    <div class="upload-form">
+        <input type="file"
+               id="fileInput"
+               class="file-input"
+               accept="image/jpeg,image/png">
+
+        <button onclick="triggerFileInput()"
+                class="upload-button">
+            Выберите файл
+        </button>
+
+        <div id="fileName" class="file-name"></div>
+        <progress id="progressBar" class="progress" value="0" max="100"></progress>
+    </div>
+</div>
+
+<script th:src="@{/js/upload.js}"></script>
+</body>
+</html>
