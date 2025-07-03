@@ -4,9 +4,16 @@ import lombok.NoArgsConstructor;
 import org.springframework.stereotype.Service;
 
 @Service
-@NoArgsConstructor
 public class PassportService {
-    public byte[] passportImageExtract(byte[] bytes) {
-        return null;
+
+    private final FaceDetectorService faceDetectorService;
+
+    public PassportService(FaceDetectorService faceDetectorService) {
+        this.faceDetectorService = faceDetectorService;
+    }
+
+
+    public byte[] passportImageExtract(byte[] imageData) {
+        return faceDetectorService.detectAndCropFace(imageData);
     }
 }
