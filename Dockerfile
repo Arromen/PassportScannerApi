@@ -1,37 +1,43 @@
-# Используем образ с поддержкой Java 21
-FROM eclipse-temurin:21-jdk-jammy
-
-# Этап сборки
 FROM eclipse-temurin:21-jdk-jammy AS builder
 WORKDIR /app
 
-# Копируем файлы сборки
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    build-essential \
+    cmake \
+    libopencv-dev \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY .mvn/ .mvn/
 COPY mvnw pom.xml ./
 
-# Делаем скрипт исполняемым
 RUN chmod +x ./mvnw
 
-# Загружаем зависимости
 RUN ./mvnw dependency:go-offline
 
-# Копируем исходный код
 COPY src ./src
 
-# Собираем приложение
 RUN ./mvnw clean package -DskipTests
 
-# Финальный этап
 FROM eclipse-temurin:21-jre-jammy
 WORKDIR /app
 
-# Копируем JAR из этапа сборки
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    libopencv-core4.5 \
+    libopencv-imgproc4.5 \
+    libopencv-highgui4.5 \
+    libopencv-objdetect4.5 \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY --from=builder /app/target/*.jar app.jar
 
-# Создаём директорию для загруженных файлов
+COPY --from=builder /app/src/main/resources/haarcascade /app/haarcascade
+
 RUN mkdir -p /app/uploaded-images
 
 EXPOSE 8080
 
-# Запускаем приложение
+ENV LD_LIBRARY_PATH=/usr/lib/jni
+
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]
