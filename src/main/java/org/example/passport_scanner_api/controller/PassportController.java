@@ -1,5 +1,6 @@
 package org.example.passport_scanner_api.controller;
 
+import org.example.passport_scanner_api.service.FaceDetectorService;
 import org.example.passport_scanner_api.service.PassportService;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -12,6 +13,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -27,46 +29,56 @@ public class PassportController {
 
     @PostMapping(value = "/upload-files", produces = MediaType.APPLICATION_OCTET_STREAM_VALUE)
     public ResponseEntity<byte[]> uploadFiles(@RequestParam("files") MultipartFile[] files) throws IOException {
-        if (files == null || files.length == 0) {
-            return ResponseEntity.badRequest().body(null);
-        }
+        ByteArrayOutputStream zipStream = new ByteArrayOutputStream();
 
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        try (ZipOutputStream zos = new ZipOutputStream(baos)) {
+        try (ZipOutputStream zipOut = new ZipOutputStream(zipStream)) {
+            int totalPages = 0;
+            int processedPages = 0;
+
             for (MultipartFile file : files) {
-                if (!isSupportedFileType(file.getContentType())) {
-                    continue;
-                }
+                if (!isSupportedFile(file)) continue;
+
+                boolean isPdf = file.getContentType().equals("application/pdf");
+                String originalName = file.getOriginalFilename();
 
                 try {
-                    byte[] passportImage = service.passportImageExtract(file.getBytes());
+                    List<FaceDetectorService.ProcessedImage> results =
+                            service.processFile(file.getBytes(), originalName, isPdf);
 
-                    ZipEntry entry = new ZipEntry("passport_" + file.getOriginalFilename());
-                    zos.putNextEntry(entry);
-                    zos.write(passportImage);
-                    zos.closeEntry();
+                    if (isPdf) {
+                        totalPages += results.size();
+                    }
+
+                    for (FaceDetectorService.ProcessedImage result : results) {
+                        zipOut.putNextEntry(new ZipEntry(result.filename));
+                        zipOut.write(result.content);
+                        zipOut.closeEntry();
+                        processedPages++;
+                    }
                 } catch (Exception e) {
-                    System.err.println("Ошибка при обработке файла " + file.getOriginalFilename() + ": " + e.getMessage());
+                    zipOut.putNextEntry(new ZipEntry("error_" + originalName + ".txt"));
+                    zipOut.write(("Ошибка обработки файла: " + e.getMessage()).getBytes());
+                    zipOut.closeEntry();
                 }
             }
-        }
 
-        if (baos.size() == 0) {
-            return ResponseEntity.badRequest().body("Не удалось обработать ни один файл".getBytes());
+            // Добавляем отчет в архив
+            zipOut.putNextEntry(new ZipEntry("processing_report.txt"));
+            String report = String.format(
+                    "Обработано файлов: %d\nОбработано страниц: %d\n",
+                    files.length, processedPages
+            );
+            zipOut.write(report.getBytes());
+            zipOut.closeEntry();
         }
 
         return ResponseEntity.ok()
-                .header(
-                        HttpHeaders.CONTENT_DISPOSITION,
-                        "attachment; filename=\"passport_images.zip\""
-                )
-                .body(baos.toByteArray());
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"passport_results.zip\"")
+                .body(zipStream.toByteArray());
     }
 
-    private boolean isSupportedFileType(String contentType) {
-        return contentType != null && (
-                contentType.startsWith("image/") ||
-                contentType.equals("application/pdf")
-        );
+    private boolean isSupportedFile(MultipartFile file) {
+        String type = file.getContentType();
+        return type != null && (type.startsWith("image/") || type.equals("application/pdf"));
     }
 }
