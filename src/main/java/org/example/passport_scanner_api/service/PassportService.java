@@ -16,7 +16,7 @@ public class PassportService {
     }
 
     public List<FaceDetectorService.ProcessedImage> processFile(byte[] fileData, String originalFilename, boolean isPdf)
-            throws IOException {
+            throws IOException, FaceDetectorService.ProcessingException {
         return faceDetectorService.processFile(fileData, originalFilename, isPdf);
     }
 }

@@ -27,54 +27,50 @@ public class PassportController {
         this.service = service;
     }
 
-    @PostMapping(value = "/upload-files", produces = MediaType.APPLICATION_OCTET_STREAM_VALUE)
-    public ResponseEntity<byte[]> uploadFiles(@RequestParam("files") MultipartFile[] files) throws IOException {
-        ByteArrayOutputStream zipStream = new ByteArrayOutputStream();
+    @PostMapping(value = "/upload-file", produces = MediaType.IMAGE_PNG_VALUE)
+    public ResponseEntity<byte[]> uploadFile(@RequestParam("file") MultipartFile file) {
+        try {
+            if (!isSupportedFile(file)) {
+                return ResponseEntity.badRequest()
+                        .header("X-Error", "Unsupported file type")
+                        .body(("Error: Unsupported file type - " + file.getContentType()).getBytes());
+            }
 
-        try (ZipOutputStream zipOut = new ZipOutputStream(zipStream)) {
-            int totalPages = 0;
-            int processedPages = 0;
+            boolean isPdf = "application/pdf".equals(file.getContentType());
+            List<FaceDetectorService.ProcessedImage> results = service.processFile(
+                    file.getBytes(),
+                    file.getOriginalFilename(),
+                    isPdf
+            );
 
-            for (MultipartFile file : files) {
-                if (!isSupportedFile(file)) continue;
+            if (results.isEmpty()) {
+                return ResponseEntity.badRequest()
+                        .header("X-Error", "No faces detected")
+                        .body("Error: No faces detected in the document".getBytes());
+            }
 
-                boolean isPdf = file.getContentType().equals("application/pdf");
-                String originalName = file.getOriginalFilename();
-
-                try {
-                    List<FaceDetectorService.ProcessedImage> results =
-                            service.processFile(file.getBytes(), originalName, isPdf);
-
-                    if (isPdf) {
-                        totalPages += results.size();
-                    }
-
-                    for (FaceDetectorService.ProcessedImage result : results) {
-                        zipOut.putNextEntry(new ZipEntry(result.filename));
-                        zipOut.write(result.content);
-                        zipOut.closeEntry();
-                        processedPages++;
-                    }
-                } catch (Exception e) {
-                    zipOut.putNextEntry(new ZipEntry("error_" + originalName + ".txt"));
-                    zipOut.write(("Ошибка обработки файла: " + e.getMessage()).getBytes());
-                    zipOut.closeEntry();
+            for (FaceDetectorService.ProcessedImage result : results) {
+                if (!result.filename.startsWith("error_")) {
+                    return ResponseEntity.ok()
+                            .header(HttpHeaders.CONTENT_DISPOSITION,
+                                    "attachment; filename=\"" + result.filename + "\"")
+                            .body(result.content);
                 }
             }
 
-            // Добавляем отчет в архив
-            zipOut.putNextEntry(new ZipEntry("processing_report.txt"));
-            String report = String.format(
-                    "Обработано файлов: %d\nОбработано страниц: %d\n",
-                    files.length, processedPages
-            );
-            zipOut.write(report.getBytes());
-            zipOut.closeEntry();
-        }
+            return ResponseEntity.badRequest()
+                    .header("X-Error", "All pages processing failed")
+                    .body("Error: Failed to process all pages".getBytes());
 
-        return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"passport_results.zip\"")
-                .body(zipStream.toByteArray());
+        } catch (IOException e) {
+            return ResponseEntity.internalServerError()
+                    .header("X-Error", "File processing error")
+                    .body(("Error: " + e.getMessage()).getBytes());
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError()
+                    .header("X-Error", "Unexpected error")
+                    .body(("Unexpected error: " + e.getMessage()).getBytes());
+        }
     }
 
     private boolean isSupportedFile(MultipartFile file) {
